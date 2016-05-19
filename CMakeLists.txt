@@ -1,20 +1,70 @@
-PROJECT("SceneLib2")
+cmake_minimum_required(VERSION 2.8)
 
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
-SET(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${PROJECT_SOURCE_DIR}/CMakeModules/")
+# ------------ COMMON  ------------
 
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+FIND_PACKAGE(Boost COMPONENTS thread filesystem system REQUIRED QUIET)
+FIND_PACKAGE(Eigen3 REQUIRED)
+FIND_PACKAGE(GLUT REQUIRED)
+FIND_PACKAGE(OpenCV REQUIRED)
 
-# Overide with cmake -DCMAKE_BUILD_TYPE=Release {dir}
-IF(NOT CMAKE_BUILD_TYPE)
-    MESSAGE("Build type not set (defaults to debug)")
-    MESSAGE("-DCMAKE_BUILD_TYPE=Release for release")
-#    SET(CMAKE_BUILD_TYPE Debug)
-    SET(CMAKE_BUILD_TYPE Release)
-ENDIF()
+include_directories(${Boost_INCLUDE_DIR})
+include_directories(${FreeImage_INCLUDE_DIRS})
+set(common_libraries ${Boost_LIBRARIES} ${Pangolin_LIBRARIES} ${OpenCV_LIBRARIES} boost_program_options boost_regex)
 
-STRING(TOLOWER ${PROJECT_NAME} LIBRARY_NAME)
 
-ADD_SUBDIRECTORY(${LIBRARY_NAME})
-ADD_SUBDIRECTORY(examples)
+# ------------ COMPILER FLAGS ------------
+
+# Also add some useful compiler flag
+set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS}  -O3 -std=c++11 -g -Wno-error=delete-non-virtual-dtor -Wno-error=deprecated-declarations -Wno-error=ignored-qualifiers -Wno-error=unused-parameter")
+
+include_directories(./scenelib2/)
+
+# ------------ SOURCES ------------
+
+SET(SOURCES ./scenelib2/monoslam.h 
+            ./scenelib2/monoslam.cpp
+            ./scenelib2/motion_model.h 
+            ./scenelib2/motion_model.cpp
+            ./scenelib2/feature.h
+            ./scenelib2/feature.cpp
+            ./scenelib2/feature_init_info.h
+            ./scenelib2/feature_init_info.cpp
+            ./scenelib2/feature_model.h
+            ./scenelib2/feature_model.cpp
+            ./scenelib2/part_feature_model.h
+            ./scenelib2/part_feature_model.cpp
+            ./scenelib2/full_feature_model.h
+            ./scenelib2/full_feature_model.cpp
+            ./scenelib2/camera.h
+            ./scenelib2/camera.cpp
+            ./scenelib2/kalman.h
+            ./scenelib2/kalman.cpp
+            ./scenelib2/framegrabber/framegrabber.h
+            ./scenelib2/framegrabber/framegrabber.cpp
+            ./scenelib2/framegrabber/filegrabber.h
+            ./scenelib2/framegrabber/filegrabber.cpp
+            ./scenelib2/framegrabber/usbcamgrabber.h
+            ./scenelib2/framegrabber/usbcamgrabber.cpp
+            ./scenelib2/graphic/graphictool.h
+            ./scenelib2/graphic/graphictool.cpp
+            ./scenelib2/support/math_util.h
+            ./scenelib2/support/math_util.cpp
+            ./scenelib2/support/eigen_util.h
+            ./scenelib2/support/eigen_util.cpp
+            ./scenelib2/support/pangolin_util.h
+            ./scenelib2/support/pangolin_util.cpp
+            ./scenelib2/improc/improc.h
+            ./scenelib2/improc/improc.cpp
+            ./scenelib2/improc/search_multiple_overlapping_ellipses.h
+            ./scenelib2/improc/search_multiple_overlapping_ellipses.cpp)
+
+	  
+	  # ----------------- ORIGINAL VERSION -----------------
+	  
+add_library(${appname}-original  ${SOURCES})
+target_link_libraries(${appname}-original   ${common_libraries})	
+SET_TARGET_PROPERTIES(${appname}-original PROPERTIES COMPILE_FLAGS "")
+ install(TARGETS ${appname}-original  DESTINATION  lib/)
+ add_benchmark(${appname}      original "" "" "")
+ add_main     (${appname}      original "" "" "${Pangolin_LIBRARIES};${GLUT_LIBRARIES};${OPENGL_LIBRARIES};GLU;GL;glut")
 
