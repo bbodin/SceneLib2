@@ -9,7 +9,7 @@ FIND_PACKAGE(OpenCV REQUIRED)
 
 include_directories(${Boost_INCLUDE_DIR})
 include_directories(${FreeImage_INCLUDE_DIRS})
-set(common_libraries ${Boost_LIBRARIES} ${Pangolin_LIBRARIES} ${OpenCV_LIBRARIES} boost_program_options boost_regex)
+set(common_libraries ${Boost_LIBRARIES} ${Pangolin_LIBRARIES} ${OpenCV_LIBRARIES} ${OPENGL_LIBRARIES} glut boost_program_options boost_regex)
 
 
 # ------------ COMPILER FLAGS ------------
