@@ -44,6 +44,18 @@
 
 namespace SceneLib2 {
 
+
+Eigen::Matrix<float, 4,4> MonoSLAM::getPose(){
+
+    Eigen::Matrix<float, 4,4> a = Eigen::Matrix<float, 4,4>::Zero();
+
+        a(0,3) = motion_model_->xpRES_(0);
+        a(1,3) = motion_model_->xpRES_(1);
+        a(2,3) = motion_model_->xpRES_(2);
+
+    return a;
+};
+
 MonoSLAM::MonoSLAM() :
   kBoxSize_(11), kNoSigma_(3.0), kCorrThresh2_(0.40),
   kCorrelationSigmaThreshold_(10.0)
@@ -1259,6 +1271,7 @@ void MonoSLAM::copy_into_patch(const cv::Mat frame, cv::Mat patch)
 // this feature.
 // @returns A pointer to the FeatureInitInfo object to be filled in with further
 // initialisation information.
+
 void MonoSLAM::add_new_partially_initialised_feature(
     cv::Mat patch, const Eigen::VectorXd &y)
 {

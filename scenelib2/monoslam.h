@@ -79,6 +79,7 @@ class MonoSLAM {
   void InitialiseAutoFeature(cv::Mat frame);
   void print_robot_state();
   bool SavePatch();
+  Eigen::Matrix<float, 4,4> getPose () ;
 
   int auto_select_n_features(int n);
   bool deselect_feature(Feature *fp);
