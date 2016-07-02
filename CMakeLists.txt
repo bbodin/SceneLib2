@@ -7,9 +7,7 @@ FIND_PACKAGE(Eigen3 REQUIRED)
 FIND_PACKAGE(GLUT REQUIRED)
 FIND_PACKAGE(OpenCV REQUIRED)
 
-include_directories(${Boost_INCLUDE_DIR})
-include_directories(${FreeImage_INCLUDE_DIRS})
-set(common_libraries ${Boost_LIBRARIES} ${Pangolin_LIBRARIES} ${OpenCV_LIBRARIES} ${OPENGL_LIBRARIES} glut boost_program_options boost_regex)
+set(common_libraries  ${OpenCV_LIBRARIES})
 
 
 # ------------ COMPILER FLAGS ------------
@@ -39,25 +37,28 @@ SET(SOURCES ./scenelib2/monoslam.h
             ./scenelib2/camera.cpp
             ./scenelib2/kalman.h
             ./scenelib2/kalman.cpp
+            ./scenelib2/support/math_util.h
+            ./scenelib2/support/math_util.cpp
+            ./scenelib2/support/eigen_util.h
+            ./scenelib2/support/eigen_util.cpp
+            ./scenelib2/improc/improc.h
+            ./scenelib2/improc/improc.cpp
+            ./scenelib2/improc/search_multiple_overlapping_ellipses.h
+            ./scenelib2/improc/search_multiple_overlapping_ellipses.cpp)
+	  SET(SOURCES_GUI
+            ./scenelib2/graphic/graphictool.h
+            ./scenelib2/graphic/graphictool.cpp
+            ./scenelib2/support/pangolin_util.h
+            ./scenelib2/support/pangolin_util.cpp)
+            
+	  SET(SOURCES_GRABBER
             ./scenelib2/framegrabber/framegrabber.h
             ./scenelib2/framegrabber/framegrabber.cpp
             ./scenelib2/framegrabber/filegrabber.h
             ./scenelib2/framegrabber/filegrabber.cpp
             ./scenelib2/framegrabber/usbcamgrabber.h
-            ./scenelib2/framegrabber/usbcamgrabber.cpp
-            ./scenelib2/graphic/graphictool.h
-            ./scenelib2/graphic/graphictool.cpp
-            ./scenelib2/support/math_util.h
-            ./scenelib2/support/math_util.cpp
-            ./scenelib2/support/eigen_util.h
-            ./scenelib2/support/eigen_util.cpp
-            ./scenelib2/support/pangolin_util.h
-            ./scenelib2/support/pangolin_util.cpp
-            ./scenelib2/improc/improc.h
-            ./scenelib2/improc/improc.cpp
-            ./scenelib2/improc/search_multiple_overlapping_ellipses.h
-            ./scenelib2/improc/search_multiple_overlapping_ellipses.cpp)
-
+            ./scenelib2/framegrabber/usbcamgrabber.cpp)
+            
 	  
 	  # ----------------- ORIGINAL VERSION -----------------
 	  
@@ -65,6 +66,11 @@ add_library(${appname}-original  ${SOURCES})
 target_link_libraries(${appname}-original   ${common_libraries})	
 SET_TARGET_PROPERTIES(${appname}-original PROPERTIES COMPILE_FLAGS "")
  install(TARGETS ${appname}-original  DESTINATION  lib/)
- add_benchmark(${appname}      original "" "" "")
- add_main     (${appname}      original "" "" "${Pangolin_LIBRARIES};${GLUT_LIBRARIES};${OPENGL_LIBRARIES};GLU;GL;glut")
+
+
+
+
+
+add_slambench_binary(${appname}   benchmark   original "${SOURCES_GUI};${SOURCES_GRABBER}" "" "${Pangolin_LIBRARIES};${GLUT_LIBRARIES};${OPENGL_LIBRARIES};GLU;GL;glut;${Boost_LIBRARIES};boost_program_options;boost_regex")
+add_slambench_binary(${appname}   main        original "${SOURCES_GUI};${SOURCES_GRABBER}" "" "${Pangolin_LIBRARIES};${GLUT_LIBRARIES};${OPENGL_LIBRARIES};GLU;GL;glut;${Boost_LIBRARIES};boost_program_options;boost_regex")
 
