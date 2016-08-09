@@ -72,5 +72,5 @@ SET_TARGET_PROPERTIES(${appname}-original PROPERTIES COMPILE_FLAGS "")
 
 
 add_slambench_binary(${appname}   benchmark   original "${SOURCES_GUI};${SOURCES_GRABBER}" "" "${Pangolin_LIBRARIES};${GLUT_LIBRARIES};${OPENGL_LIBRARIES};GLU;GL;glut;${Boost_LIBRARIES};boost_program_options;boost_regex")
-add_slambench_binary(${appname}   main        original "${SOURCES_GUI};${SOURCES_GRABBER}" "" "${Pangolin_LIBRARIES};${GLUT_LIBRARIES};${OPENGL_LIBRARIES};GLU;GL;glut;${Boost_LIBRARIES};boost_program_options;boost_regex")
+add_slambench_binary(${appname}   gui         original "${SOURCES_GUI};${SOURCES_GRABBER}" "" "${Pangolin_LIBRARIES};${GLUT_LIBRARIES};${OPENGL_LIBRARIES};GLU;GL;glut;${Boost_LIBRARIES};boost_program_options;boost_regex")
 
