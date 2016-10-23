@@ -257,7 +257,7 @@ bool sb_process_once () {
 
 }
 
-sb_float3  sb_get_pose     () {
+sb_float3  sb_get_position     () {
     Eigen::Matrix<float, 4,4> pose = g_monoslam->getPose();
 
 
@@ -281,10 +281,12 @@ bool sb_clean_slam_system(){
 }
 
 
-bool sb_initialize_ui(SLAMBenchUI * ) {
-    return false;
+bool sb_initialize_ui(SLAMBenchUI * ui) {
+	ui->init(0, GREY8,  config->get_input_size().x, config->get_input_size().y);
+    return true;
 }
 
 bool sb_update_ui(SLAMBenchUI * ui) {
-    return false;
+	ui->update(0, inputGrey->data);
+    return true;
 }
