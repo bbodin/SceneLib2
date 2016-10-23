@@ -62,7 +62,7 @@ SET(SOURCES ./scenelib2/monoslam.h
 	  
 	  # ----------------- ORIGINAL VERSION -----------------
 	  
-add_library(${appname}-original  ${SOURCES})
+add_library(${appname}-original  ${SOURCES}  ./monoslam_library.cpp)
 target_link_libraries(${appname}-original   ${common_libraries})	
 SET_TARGET_PROPERTIES(${appname}-original PROPERTIES COMPILE_FLAGS "")
  install(TARGETS ${appname}-original  DESTINATION  lib/)
