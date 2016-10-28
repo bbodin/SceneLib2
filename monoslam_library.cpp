@@ -30,9 +30,28 @@
 
 
 
+SceneLib2::MonoSLAM *g_monoslam;
+MonoSLAMApplication* config;
+cv::Mat * inputGrey;
+
+
 
 void init(SceneLib2::MonoSLAM* monoslam, MonoSLAMApplication* config)
 {
+
+    GreyFrame* grey_frame = NULL;
+
+    for (Sensor *s : config->get_sensors()) {
+            if (s->get_format() == GREY_FRAME) {
+                grey_frame = dynamic_cast<GreyFrame*>(s);
+            }
+    }
+
+    if (not (grey_frame)) {
+            std::cerr << "Invalid sensors found, Grey not found." << std::endl;
+            exit(1);
+    }
+
 
 
     /***
@@ -55,16 +74,16 @@ void init(SceneLib2::MonoSLAM* monoslam, MonoSLAMApplication* config)
 
     // Setting of the initial position and the quaternion
 
-    Eigen::Vector3f init_pose =   {config->get_initial_pos_factor().x,config->get_initial_pos_factor().y,config->get_initial_pos_factor().z};
+    Eigen::Vector3f init_pose =   {config->get_initial_position().x,config->get_initial_position().y,config->get_initial_position().z};
 
     double state_rw_x = init_pose[0];
     double state_rw_y = init_pose[0];
     double state_rw_z = init_pose[1];
 
-    double state_qwr_x = config->get_init_pose_rotation().x;
-    double state_qwr_y = config->get_init_pose_rotation().y;
-    double state_qwr_z = config->get_init_pose_rotation().z;
-    double state_qwr_w = config->get_init_pose_rotation().w;
+    double state_qwr_x = config->get_initial_rotation().x;
+    double state_qwr_y = config->get_initial_rotation().y;
+    double state_qwr_z = config->get_initial_rotation().z;
+    double state_qwr_w = config->get_initial_rotation().w;
 
 
 
@@ -73,10 +92,10 @@ void init(SceneLib2::MonoSLAM* monoslam, MonoSLAMApplication* config)
     //  2. MotionModel
     //  3. FullFeatureModel and PartFeatureModel
 
-    const sb_uint2 inputSize = config->get_input_size();
+    const sb_uint2 inputSize = {(unsigned int)grey_frame->getSize()[0],(unsigned int)grey_frame->getSize()[1]};
     std::cerr << "input Size is = " << inputSize.x << "," << inputSize.y << std::endl;
 
-    sb_float4 camera =   config->get_camera();
+    sb_float4 camera =   {grey_frame->getIntrinsics()[0],grey_frame->getIntrinsics()[1],grey_frame->getIntrinsics()[2],grey_frame->getIntrinsics()[3]};
 
     camera.x = camera.x *  inputSize.x;
     camera.y = camera.y *  inputSize.y;
@@ -141,11 +160,6 @@ void init(SceneLib2::MonoSLAM* monoslam, MonoSLAMApplication* config)
     srand48(0); // Always the same seed (pick a number), so deterministic
 }
 
-SceneLib2::MonoSLAM *g_monoslam;
-MonoSLAMApplication* config;
-cv::Mat * inputGrey;
-
-
 void sb_new_slam_configuration(SLAMBenchConfiguration ** slam_settings) {
     *slam_settings = new MonoSLAMApplication();
 }
@@ -154,8 +168,23 @@ bool sb_init_slam_system(SLAMBenchConfiguration * slam_settings) {
 
     config = dynamic_cast<MonoSLAMApplication*>(slam_settings);
 
-    Eigen::Vector3f init_pose =   {config->get_initial_pos_factor().x,config->get_initial_pos_factor().y,config->get_initial_pos_factor().z};
-    const Eigen::Vector2i inputSize = {config->get_input_size().x,config->get_input_size().y};
+
+    GreyFrame* grey_frame = NULL;
+
+        for (Sensor *s : slam_settings->get_sensors()) {
+            if (s->get_format() == GREY_FRAME) {
+                grey_frame = dynamic_cast<GreyFrame*>(s);
+            }
+        }
+
+        if (not (grey_frame)) {
+            std::cerr << "Invalid sensors found, Grey not found." << std::endl;
+            return false;
+        }
+
+
+
+    const Eigen::Vector2i inputSize = grey_frame->getSize();
     std::cerr << "input Size is = " << inputSize[0] << "," << inputSize[1] << std::endl;
 
     //  =========  BASIC PARAMETERS  (input size / computation size )  =========
@@ -165,50 +194,6 @@ bool sb_init_slam_system(SLAMBenchConfiguration * slam_settings) {
 
 
     //  =========  BASIC BUFFERS  (input / output )  =========
-
-
-    // Generate the initial position matrix
-    Eigen::Matrix<float, 4,4> mInit(4,4);
-    mInit << 1, 0, 0, init_pose[0],
-            0, 1, 0, init_pose[1],
-            0, 0, 1, init_pose[2],
-            0, 0, 0, 1;
-
-    Eigen::Vector4f vals = {
-            config->get_init_pose_rotation().x,
-            config->get_init_pose_rotation().y,
-            config->get_init_pose_rotation().z,
-            config->get_init_pose_rotation().w
-    };
-
-    Eigen::Quaternionf  initial_pose_quant = Eigen::Quaternionf(vals[3], vals[0], vals[1], vals[2]);
-    mInit.block<3,3>(0,0) =  initial_pose_quant.toRotationMatrix();
-
-    Eigen::Matrix<float, 4,4> poseMatrix;
-    poseMatrix(0,0) = mInit.coeff(0, 0);
-    poseMatrix(0,1) = mInit.coeff(0, 1);
-    poseMatrix(0,2) = mInit.coeff(0, 2);
-    poseMatrix(0,3) = mInit.coeff(0, 3);
-
-    poseMatrix(1,0) = mInit.coeff(1, 0);
-    poseMatrix(1,1) = mInit.coeff(1, 1);
-    poseMatrix(1,2) = mInit.coeff(1, 2);
-    poseMatrix(1,3) = mInit.coeff(1, 3);
-
-    poseMatrix(2,0) = mInit.coeff(2, 0);
-    poseMatrix(2,1) = mInit.coeff(2, 1);
-    poseMatrix(2,2) = mInit.coeff(2, 2);
-    poseMatrix(2,3) = mInit.coeff(2, 3);
-
-    poseMatrix(3,0) = mInit.coeff(3, 0);
-    poseMatrix(3,1) = mInit.coeff(3, 1);
-    poseMatrix(3,2) = mInit.coeff(3, 2);
-    poseMatrix(3,3) = mInit.coeff(3, 3);
-
-    std::cerr << "Init pos is = " << poseMatrix(0,0)  << "," << poseMatrix(0,1)  << "," << poseMatrix(0,2) << "," << poseMatrix(0,3) << std::endl;
-    std::cerr << "Init pos is = " << poseMatrix(1,0)  << "," << poseMatrix(1,1)  << "," << poseMatrix(1,2) << "," << poseMatrix(1,3) << std::endl;
-    std::cerr << "Init pos is = " << poseMatrix(2,0)  << "," << poseMatrix(2,1)  << "," << poseMatrix(2,2) << "," << poseMatrix(2,3) << std::endl;
-    std::cerr << "Init pos is = " << poseMatrix(3,0)  << "," << poseMatrix(3,1)  << "," << poseMatrix(3,2) << "," << poseMatrix(3,3) << std::endl;
 
     g_monoslam = new SceneLib2::MonoSLAM ();
 
@@ -220,15 +205,15 @@ bool sb_init_slam_system(SLAMBenchConfiguration * slam_settings) {
     return true;
 }
 
-bool sb_update_frame (void * data, frame_format type) {
-    switch (type) {
-        case GREY_FRAME :
-            memcpy ( (unsigned char*)inputGrey->data , data , sizeof(unsigned char) * config->get_input_size().x * config->get_input_size().y);
-            return true;
-        default :
-            return false;
-       };
+bool sb_update_frame (void * data, Sensor * s) {
 
+    switch (s->get_format()) {
+           case GREY_FRAME :
+               memcpy (  (unsigned char*)inputGrey->data , data , sizeof(unsigned char) * inputGrey->size[0] *    inputGrey->size[1]);
+               return true;
+           default :
+               return false;
+          };
 
 }
 
@@ -282,7 +267,8 @@ bool sb_clean_slam_system(){
 
 
 bool sb_initialize_ui(SLAMBenchUI * ui) {
-	ui->init(0, GREY8,  config->get_input_size().x, config->get_input_size().y);
+
+	ui->init(0, GREY8,      inputGrey->size[0] ,    inputGrey->size[1]);
     return true;
 }
 
