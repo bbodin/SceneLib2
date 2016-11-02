@@ -205,11 +205,11 @@ bool sb_init_slam_system(SLAMBenchConfiguration * slam_settings) {
     return true;
 }
 
-bool sb_update_frame (void * data, Sensor * s) {
+bool sb_update_frame (Sensor * s) {
 
     switch (s->get_format()) {
            case GREY_FRAME :
-               memcpy (  (unsigned char*)inputGrey->data , data , sizeof(unsigned char) * inputGrey->size[0] *    inputGrey->size[1]);
+               dynamic_cast<GreyFrame*>(s)->getGreyFrame( (unsigned char * ) inputGrey->data);
                return true;
            default :
                return false;
