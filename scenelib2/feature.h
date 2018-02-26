@@ -37,7 +37,7 @@
 #define FEATURE_H
 
 #include <Eigen/Eigen>
-#include <opencv2/opencv.hpp>
+#include "cv_mat.h"
 
 #include "camera.h"
 #include "feature_model.h"

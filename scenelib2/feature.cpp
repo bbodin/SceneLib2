@@ -103,50 +103,6 @@ Feature::Feature(cv::Mat patch,
   }
 }
 
-// Constructor for known features. The different number of
-// arguments differentiates it from the constructor for partially-initialised features
-Feature::Feature(FeatureModel *feature_model,
-                 const Eigen::VectorXd &y, const Eigen::VectorXd &xp,
-                 const int label, const int total_state_size, const string &identifier,
-                 vector<Feature *> feature_list)
-{
-  // Need to get FeatureModel before calling Initialise()
-  fully_initialised_flag_ = true;
-  feature_model_ = (FullFeatureModel *)feature_model;
-
-  Initialise();
-
-  patch_ = cv::imread(identifier, 0);
-
-  label_ = label;
-  position_in_list_ = feature_list.size();  // Position of new feature in list
-  position_in_total_state_vector_ = total_state_size;
-
-  // Save the vehicle position where this feature was acquired
-  xp_org_.resize(xp.size());
-  xp_org_ = xp;
-
-  // Straighforward initialisation of state and covariances
-  y_.resize(y.size());
-  y_ = y;
-  Pxy_.resize(feature_model_->motion_model_->kStateSize_, feature_model_->kFeatureStateSize_);
-  Pxy_.setZero();
-  Pyy_.resize(feature_model_->kFeatureStateSize_, feature_model_->kFeatureStateSize_);
-  Pyy_.setZero();
-
-  vector<Feature *>::iterator it = feature_list.begin();
-
-  // Fill covariance cross-terms with zero
-  for (int i = 0; i < position_in_list_; ++i) {
-    Eigen::MatrixXd newPyjyi_to_store((*it)->feature_model_->kFeatureStateSize_,
-                                      feature_model_->kFeatureStateSize_);
-    newPyjyi_to_store.setZero();
-
-    matrix_block_list_.push_back(newPyjyi_to_store);
-
-    ++it;
-  }
-}
 
 Feature::~Feature()
 {

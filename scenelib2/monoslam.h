@@ -39,8 +39,6 @@
 #include <vector>
 #include <Eigen/Eigen>
 
-#include "framegrabber/framegrabber.h"
-#include "graphic/graphictool.h"
 #include "camera.h"
 #include "motion_model.h"
 #include "feature_model.h"
@@ -73,7 +71,7 @@ class MonoSLAM {
   MonoSLAM();
   ~MonoSLAM();
 
-  void Init(const string &config_path);
+  void Init(const string);
 
   bool GoOneStep(cv::Mat frame, bool save_trajectory, bool enable_mapping);
   void InitialiseAutoFeature(cv::Mat frame);
@@ -141,6 +139,7 @@ class MonoSLAM {
   void find_eigenvalues(double A, double B, double C, double *eval1ptr,
                         double *eval2ptr);
   void InitialiseFeature(cv::Mat frame);
+  void draw_features (void* data, Eigen::Vector2i image_size);
   void copy_into_patch(const cv::Mat frame, cv::Mat patch);
   void add_new_partially_initialised_feature(cv::Mat patch, const Eigen::VectorXd &y);
   void AddNewKnownFeature(const Eigen::VectorXd &y, const Eigen::VectorXd &xp,
@@ -160,9 +159,6 @@ class MonoSLAM {
   MotionModel       *motion_model_;
   FullFeatureModel  *full_feature_model_;
   PartFeatureModel  *part_feature_model_;
-
-  FrameGrabber      *frame_grabber_;
-  GraphicTool       *graphic_tool_;
 
   Kalman            *kalman_;
 
@@ -217,6 +213,7 @@ class MonoSLAM {
   const double  kNoSigma_;
   const double  kCorrThresh2_;
   const double  kCorrelationSigmaThreshold_;
+  bool          first_;
 };
 
 } // namespace SceneLib2

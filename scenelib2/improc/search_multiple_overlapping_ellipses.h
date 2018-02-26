@@ -39,7 +39,7 @@
 #include <Eigen/Eigen>
 #include <Eigen/StdVector>
 
-#include <opencv2/opencv.hpp>
+#include "cv_mat.h"
 
 namespace SceneLib2 {
 

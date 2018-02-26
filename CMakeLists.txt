@@ -16,6 +16,7 @@ set(common_libraries  ${OpenCV_LIBRARIES})
 set(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS}  -O3 -std=c++11 -g -Wno-error=delete-non-virtual-dtor -Wno-error=deprecated-declarations -Wno-error=ignored-qualifiers -Wno-error=unused-parameter")
 
 include_directories(./scenelib2/)
+include_directories(./include/)
 
 # ------------ SOURCES ------------
 
@@ -59,18 +60,13 @@ SET(SOURCES ./scenelib2/monoslam.h
             ./scenelib2/framegrabber/usbcamgrabber.h
             ./scenelib2/framegrabber/usbcamgrabber.cpp)
             
+            
+	  # ----------------- SEQUENTIAL VERSION -----------------
 	  
-	  # ----------------- ORIGINAL VERSION -----------------
-	  
-add_library(${appname}-original  ${SOURCES}  ./monoslam_library.cpp)
-target_link_libraries(${appname}-original   ${common_libraries})	
-SET_TARGET_PROPERTIES(${appname}-original PROPERTIES COMPILE_FLAGS "")
- install(TARGETS ${appname}-original  DESTINATION  lib/)
+add_library(${appname}-sequential  ${SOURCES}  monoslam_library.cpp)
+target_link_libraries(${appname}-sequential   ${common_libraries})	
+SET_TARGET_PROPERTIES(${appname}-sequential PROPERTIES COMPILE_FLAGS "")
+SET_TARGET_PROPERTIES(${appname}-sequential PROPERTIES COMPILE_FLAGS "-fPIC")
+install(TARGETS ${appname}-sequential  DESTINATION  lib/)
 
-
-
-
-
-add_slambench_binary(${appname}   benchmark   original "${SOURCES_GUI};${SOURCES_GRABBER}" "" "${Pangolin_LIBRARIES};${GLUT_LIBRARIES};${OPENGL_LIBRARIES};GLU;GL;glut;${Boost_LIBRARIES};boost_program_options;boost_regex")
-add_slambench_binary(${appname}   gui         original "${SOURCES_GUI};${SOURCES_GRABBER}" "" "${Pangolin_LIBRARIES};${GLUT_LIBRARIES};${OPENGL_LIBRARIES};GLU;GL;glut;${Boost_LIBRARIES};boost_program_options;boost_regex")
-
+generate_slam_library(${appname}-sequential "")

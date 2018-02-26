@@ -34,6 +34,7 @@
  */
 
 #include "camera.h"
+#include <iostream>
 
 namespace SceneLib2 {
 
@@ -140,7 +141,13 @@ Eigen::Vector3d Camera::Unproject(const Eigen::Vector2d& image)
   const double radius2 = (centred(0)*centred(0) +
                           centred(1)*centred(1));
 
-  double factor = sqrt(1 - 2 * kd1_ * radius2);
+  double distored_value = 1 - 2 * kd1_ * radius2;
+
+  if (distored_value < 0 ) {
+      std::cout << "[ERROR] Unsupported value of kd1_ distored_value = " << distored_value << std::endl;
+  }
+
+  double factor = sqrt(distored_value);
 
   Eigen::Vector2d undistorted = centred / factor;
 

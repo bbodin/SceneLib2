@@ -32,15 +32,33 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-
-#include <pangolin/pangolin.h>
-
+#include <iostream>
 #include "monoslam.h"
-#include "graphic/graphictool.h"
 #include "kalman.h"
 #include "support/eigen_util.h"
 #include "improc/improc.h"
 #include "improc/search_multiple_overlapping_ellipses.h"
+
+// Try a few times to get one that's not overlapping with any features
+// we know about
+const int NUMBER_OF_RANDOM_INIT_FEATURE_SEARCH_REGION_TRIES = 5;
+const int FEATURE_SEPARATION_MINIMUM = 10;
+// Predict the camera position a few steps into the future
+const int  FEATURE_INIT_STEPS_TO_PREDICT = 10;
+// Project a point a "reasonable" distance forward from there along
+// the optic axis
+const double FEATURE_INIT_DEPTH_HYPOTHESIS = 2.5;
+// First find a suitable patch
+const double SUITABLE_PATCH_SCORE_THRESHOLD = 20000;
+const int INIT_FEATURE_SEARCH_WIDTH = 80;
+const int INIT_FEATURE_SEARCH_HEIGHT = 60;
+const int   KBOXSIZE = 11 ;
+const float KNOSIGMA = 3.0;
+const float KCORTHRES = 0.40;
+const float KCORTHSIGRES = 10.0;
+
+
+
 
 namespace SceneLib2 {
 
@@ -57,16 +75,14 @@ Eigen::Matrix<float, 4,4> MonoSLAM::getPose(){
 };
 
 MonoSLAM::MonoSLAM() :
-  kBoxSize_(11), kNoSigma_(3.0), kCorrThresh2_(0.40),
-  kCorrelationSigmaThreshold_(10.0)
+  kBoxSize_(KBOXSIZE), kNoSigma_(KNOSIGMA), kCorrThresh2_(KCORTHRES),
+  kCorrelationSigmaThreshold_(KCORTHSIGRES), first_(true)
 {
   camera_ = NULL;
   motion_model_ = NULL;
   full_feature_model_ = NULL;
   part_feature_model_ = NULL;
 
-  frame_grabber_ = NULL;
-  graphic_tool_ = NULL;
 
   kalman_ = NULL;
 }
@@ -85,11 +101,6 @@ MonoSLAM::~MonoSLAM()
   if (part_feature_model_ != NULL)
     delete part_feature_model_;
 
-  if (frame_grabber_ != NULL)
-    delete  frame_grabber_;
-
-  if (graphic_tool_ != NULL)
-    delete  graphic_tool_;
 
   if (kalman_ != NULL)
     delete  kalman_;
@@ -119,6 +130,14 @@ MonoSLAM::~MonoSLAM()
 //  - Update the partially-initialised features
 bool MonoSLAM::GoOneStep(cv::Mat frame, bool save_trajectory, bool enable_mapping)
 {
+   /**
+    * Try to graph some features automatically ... (Bruno)
+    */
+    if (selected_feature_list_.size() == 0) {
+        this->InitialiseAutoFeature(frame);
+        first_ = false;
+    }
+
   location_selected_flag_ = false;  // Equivalent to robot->nullify_image_selection()
   init_feature_search_region_defined_flag_ = false;
 
@@ -838,16 +857,6 @@ bool MonoSLAM::AutoInitialiseFeature(cv::Mat frame, const Eigen::Vector3d &u)
   // Idea: look for a point in a position that we expect to be near the
   // image centre soon
 
-  // Predict the camera position a few steps into the future
-  const int  FEATURE_INIT_STEPS_TO_PREDICT = 10;
-
-  // Project a point a "reasonable" distance forward from there along
-  // the optic axis
-  const double FEATURE_INIT_DEPTH_HYPOTHESIS = 2.5;
-
-  // First find a suitable patch
-  const double SUITABLE_PATCH_SCORE_THRESHOLD = 20000;
-
   Eigen::VectorXd local_u(motion_model_->kControlSize_);
 
   if (FindNonOverlappingRegion(u,
@@ -956,18 +965,14 @@ bool MonoSLAM::FindNonOverlappingRegionNoPredict(int safe_feature_search_ustart,
                                                  int &init_feature_search_ufinish,
                                                  int &init_feature_search_vfinish)
 {
-  const int INIT_FEATURE_SEARCH_WIDTH = 80;
-  const int INIT_FEATURE_SEARCH_HEIGHT = 60;
+
 
   // Within this, choose a random region
   // Check that we've got some room for manouevre
   if (safe_feature_search_ufinish - safe_feature_search_ustart > INIT_FEATURE_SEARCH_WIDTH &&
       safe_feature_search_vfinish - safe_feature_search_vstart > INIT_FEATURE_SEARCH_HEIGHT) {
 
-    // Try a few times to get one that's not overlapping with any features
-    // we know about
-    const int NUMBER_OF_RANDOM_INIT_FEATURE_SEARCH_REGION_TRIES = 5;
-    const int FEATURE_SEPARATION_MINIMUM = 10;
+
 
     // Build vectors of feature positions so we only have to work them out once
     vector<double>  u_array;
@@ -1288,20 +1293,6 @@ void MonoSLAM::add_new_partially_initialised_feature(
   feature_init_info_vector_.push_back(feat);
 }
 
-void MonoSLAM::AddNewKnownFeature(const Eigen::VectorXd &y,
-                                  const Eigen::VectorXd &xp,
-                                  const string &identifier)
-{
-  Feature *nf = new Feature(full_feature_model_, y, xp,
-                            next_free_label_, total_state_size_, identifier,
-                            feature_list_);
-
-  feature_list_.push_back(nf);
-
-  total_state_size_ += full_feature_model_->kFeatureStateSize_;
-  ++next_free_label_; // Potential millenium-style bug when this overloads
-                      // (hello if you're reading this in the year 3000)
-}
 
 // Try to match the partially-initialised features, then update their
 // distributions. If possible (if the standard deviation ratio \f$ \Sigma_{11} /
@@ -1545,6 +1536,59 @@ void MonoSLAM::delete_partially_initialised_feature(
     mark_feature_by_lab(currently_marked_feature);
 }
 
+void draw_patch (unsigned char * image, Eigen::Vector2i image_size,  int x ,  int y , const cv::Mat &patch, const int name_to_draw) {
+
+    std::cerr << "Feature " <<  x << "," << y << ":" << patch <<  name_to_draw << std::endl;
+	std::cerr << "Image " << image_size[0] << "x" << image_size[1] << std::endl;
+	
+    for (int patch_x = 0 ; patch_x < patch.size().width ; patch_x += 1)
+        for (int patch_y = 0 ; patch_y < patch.size().height ; patch_y += 1)  {
+
+
+            if (((x + patch_x) >= image_size[0]) or ((y + patch_y) >= image_size[1]))  {
+                std::cerr << "Write " <<  x + patch_x + (y + patch_y) * image_size[0] << std::endl;
+                std::cerr << "  That is " <<  x << "+" << patch_x  << "," << y << "+" << patch_y << std::endl;
+                patch_x = patch.size().width;
+                break;
+            } else {
+                image[x + patch_x + (y + patch_y) * image_size[0]] = patch.data[patch_x + (patch_y * patch.size().width)];
+            }
+
+        }
+
+}
+
+void MonoSLAM::draw_features (void * data, Eigen::Vector2i image_size) {
+
+    for (vector<Feature *>::const_iterator it = this->feature_list_.begin();
+         it != this->feature_list_.end(); ++it) {
+
+        std::cerr << "Feature" << std::endl;
+
+        // Where to draw the patches?
+        double draw_patch_x = -1, draw_patch_y = -1;
+
+        if((*it)->selected_flag_ && (*it)->successful_measurement_flag_) {
+          // If we just successfully matched this feature,
+          // then draw match position
+          draw_patch_x = (*it)->z_(0);
+          draw_patch_y = (*it)->z_(1);
+        }
+        else {
+          // Otherwise current estimated position after update
+          draw_patch_x = this->full_feature_model_->hiRES_(0);
+          draw_patch_y = this->full_feature_model_->hiRES_(1);
+        }
+
+        int draw_patch_x_int = int(pow(2.0, int((log(double(draw_patch_x)) / log(2.0)) + 1.0)));
+        int draw_patch_y_int = int(pow(2.0, int((log(double(draw_patch_y)) / log(2.0)) + 1.0)));
+
+        draw_patch ((unsigned char * ) data, image_size, draw_patch_x_int , draw_patch_y_int , (*it)->patch_ ,  (*it)->label_ + 1 );
+
+
+    }
+}
+
 void MonoSLAM::InitialiseAutoFeature(cv::Mat frame)
 {
   Eigen::Vector3d u;
@@ -1561,302 +1605,44 @@ void MonoSLAM::print_robot_state()
   cout << Pxx_ << endl;
 }
 
-bool MonoSLAM::SavePatch()
+
+void MonoSLAM::Init(const string)
 {
-  if (marked_feature_label_ == -1) {
-    return  false;
-  }
 
-  vector<Feature *>::iterator it_to_save;
 
-  for (it_to_save = feature_list_.begin(); it_to_save != feature_list_.end();
-       ++it_to_save) {
-    if ((int)((*it_to_save)->label_) == marked_feature_label_)
-      break;
-  }
+  double delta_t =  0.033333333;
+  int    number_of_features_to_select =  10;
+  int    number_of_features_to_keep_visible =  12;
+  int    max_features_to_init_at_once =  1;
+  double min_lambda =  0.5;
+  double max_lambda =  5.0;
+  int    number_of_particles =  100;
+  double standard_deviation_depth_ratio =  0.3;
+  int    min_number_of_particles =  20;
+  double prune_probability_threshold =  0.05;
+  int    erase_partially_init_feature_after_this_many_attempts =  10;
+  int    cam_width =  320;
+  int    cam_height =  240;
+  int    cam_fku =  195;
+  int    cam_fkv =  195;
+  int    cam_u0 =  162;
+  int    cam_v0 =  125;
+  double cam_kd1 =  9e-06;
+  int    cam_sd =  1;
+  double state_rw_x =  0.0;
+  double state_rw_y =  0.0;
+  double state_rw_z =  -0.60;
+  double state_qwr_x =  0.0;
+  double state_qwr_y =  0.0;
+  double state_qwr_z =  0.0;
+  double state_qwr_w =  1.0;
+  double state_vw_x =  0.0;
+  double state_vw_y =  0.0;
+  double state_vw_z =  -0.1;
+  double state_ww_x =  0.0;
+  double state_ww_y =  0.0;
+  double state_ww_z =  0.01;
 
-  if (it_to_save == feature_list_.end()) {
-    return  false;
-  }
-
-  cv::imwrite("patch.png", (*it_to_save)->patch_);
-
-  return  true;
-}
-
-void MonoSLAM::Init(const string &config_path)
-{
-  // TODO: Need to use array, vector, quaternion and matrix forms
-  // instead listing all components!
-  pangolin::ParseVarsFile(config_path);
-
-  pangolin::Var<bool>   input_mode("input.mode", false);
-  pangolin::Var<string> input_name("input.name", "empty");
-
-  pangolin::Var<double> delta_t("params.delta_t", 0.0);
-  pangolin::Var<int>    number_of_features_to_select("params.number_of_features_to_select", 0);
-  pangolin::Var<int>    number_of_features_to_keep_visible("params.number_of_features_to_keep_visible", 0);
-  pangolin::Var<int>    max_features_to_init_at_once("params.max_features_to_init_at_once", 0);
-  pangolin::Var<double> min_lambda("params.min_lambda", 0.0);
-  pangolin::Var<double> max_lambda("params.max_lambda", 0.0);
-  pangolin::Var<int>    number_of_particles("params.number_of_particles", 0);
-  pangolin::Var<double> standard_deviation_depth_ratio("params.standard_deviation_depth_ratio", 0.0);
-  pangolin::Var<int>    min_number_of_particles("params.min_number_of_particles", 0);
-  pangolin::Var<double> prune_probability_threshold("params.prune_probability_threshold", 0.0);
-  pangolin::Var<int>    erase_partially_init_feature_after_this_many_attempts("params.erase_partially_init_feature_after_this_many_attempts", 0);
-
-  pangolin::Var<int>    cam_width("cam.width", 0);
-  pangolin::Var<int>    cam_height("cam.height", 0);
-  pangolin::Var<int>    cam_fku("cam.fku", 0);
-  pangolin::Var<int>    cam_fkv("cam.fkv", 0);
-  pangolin::Var<int>    cam_u0("cam.u0", 0);
-  pangolin::Var<int>    cam_v0("cam.v0", 0);
-  pangolin::Var<double> cam_kd1("cam.kd1", 0.0);
-  pangolin::Var<int>    cam_sd("cam.sd", 0);
-
-  pangolin::Var<double> state_rw_x("state.rw_x", 0.0);
-  pangolin::Var<double> state_rw_y("state.rw_y", 0.0);
-  pangolin::Var<double> state_rw_z("state.rw_z", 0.0);
-  pangolin::Var<double> state_qwr_x("state.qwr_x", 0.0);
-  pangolin::Var<double> state_qwr_y("state.qwr_y", 0.0);
-  pangolin::Var<double> state_qwr_z("state.qwr_z", 0.0);
-  pangolin::Var<double> state_qwr_w("state.qwr_w", 0.0);
-  pangolin::Var<double> state_vw_x("state.vw_x", 0.0);
-  pangolin::Var<double> state_vw_y("state.vw_y", 0.0);
-  pangolin::Var<double> state_vw_z("state.vw_z", 0.0);
-  pangolin::Var<double> state_ww_x("state.ww_x", 0.0);
-  pangolin::Var<double> state_ww_y("state.ww_y", 0.0);
-  pangolin::Var<double> state_ww_z("state.ww_z", 0.0);
-
-  pangolin::Var<double> state_pxx0_0("state.pxx0_0", 0.0);
-  pangolin::Var<double> state_pxx0_1("state.pxx0_1", 0.0);
-  pangolin::Var<double> state_pxx0_2("state.pxx0_2", 0.0);
-  pangolin::Var<double> state_pxx0_3("state.pxx0_3", 0.0);
-  pangolin::Var<double> state_pxx0_4("state.pxx0_4", 0.0);
-  pangolin::Var<double> state_pxx0_5("state.pxx0_5", 0.0);
-  pangolin::Var<double> state_pxx0_6("state.pxx0_6", 0.0);
-  pangolin::Var<double> state_pxx0_7("state.pxx0_7", 0.0);
-  pangolin::Var<double> state_pxx0_8("state.pxx0_8", 0.0);
-  pangolin::Var<double> state_pxx0_9("state.pxx0_9", 0.0);
-  pangolin::Var<double> state_pxx0_10("state.pxx0_10", 0.0);
-  pangolin::Var<double> state_pxx0_11("state.pxx0_11", 0.0);
-  pangolin::Var<double> state_pxx0_12("state.pxx0_12", 0.0);
-
-  pangolin::Var<double> state_pxx1_0("state.pxx1_0", 0.0);
-  pangolin::Var<double> state_pxx1_1("state.pxx1_1", 0.0);
-  pangolin::Var<double> state_pxx1_2("state.pxx1_2", 0.0);
-  pangolin::Var<double> state_pxx1_3("state.pxx1_3", 0.0);
-  pangolin::Var<double> state_pxx1_4("state.pxx1_4", 0.0);
-  pangolin::Var<double> state_pxx1_5("state.pxx1_5", 0.0);
-  pangolin::Var<double> state_pxx1_6("state.pxx1_6", 0.0);
-  pangolin::Var<double> state_pxx1_7("state.pxx1_7", 0.0);
-  pangolin::Var<double> state_pxx1_8("state.pxx1_8", 0.0);
-  pangolin::Var<double> state_pxx1_9("state.pxx1_9", 0.0);
-  pangolin::Var<double> state_pxx1_10("state.pxx1_10", 0.0);
-  pangolin::Var<double> state_pxx1_11("state.pxx1_11", 0.0);
-  pangolin::Var<double> state_pxx1_12("state.pxx1_12", 0.0);
-
-  pangolin::Var<double> state_pxx2_0("state.pxx2_0", 0.0);
-  pangolin::Var<double> state_pxx2_1("state.pxx2_1", 0.0);
-  pangolin::Var<double> state_pxx2_2("state.pxx2_2", 0.0);
-  pangolin::Var<double> state_pxx2_3("state.pxx2_3", 0.0);
-  pangolin::Var<double> state_pxx2_4("state.pxx2_4", 0.0);
-  pangolin::Var<double> state_pxx2_5("state.pxx2_5", 0.0);
-  pangolin::Var<double> state_pxx2_6("state.pxx2_6", 0.0);
-  pangolin::Var<double> state_pxx2_7("state.pxx2_7", 0.0);
-  pangolin::Var<double> state_pxx2_8("state.pxx2_8", 0.0);
-  pangolin::Var<double> state_pxx2_9("state.pxx2_9", 0.0);
-  pangolin::Var<double> state_pxx2_10("state.pxx2_10", 0.0);
-  pangolin::Var<double> state_pxx2_11("state.pxx2_11", 0.0);
-  pangolin::Var<double> state_pxx2_12("state.pxx2_12", 0.0);
-
-  pangolin::Var<double> state_pxx3_0("state.pxx3_0", 0.0);
-  pangolin::Var<double> state_pxx3_1("state.pxx3_1", 0.0);
-  pangolin::Var<double> state_pxx3_2("state.pxx3_2", 0.0);
-  pangolin::Var<double> state_pxx3_3("state.pxx3_3", 0.0);
-  pangolin::Var<double> state_pxx3_4("state.pxx3_4", 0.0);
-  pangolin::Var<double> state_pxx3_5("state.pxx3_5", 0.0);
-  pangolin::Var<double> state_pxx3_6("state.pxx3_6", 0.0);
-  pangolin::Var<double> state_pxx3_7("state.pxx3_7", 0.0);
-  pangolin::Var<double> state_pxx3_8("state.pxx3_8", 0.0);
-  pangolin::Var<double> state_pxx3_9("state.pxx3_9", 0.0);
-  pangolin::Var<double> state_pxx3_10("state.pxx3_10", 0.0);
-  pangolin::Var<double> state_pxx3_11("state.pxx3_11", 0.0);
-  pangolin::Var<double> state_pxx3_12("state.pxx3_12", 0.0);
-
-  pangolin::Var<double> state_pxx4_0("state.pxx4_0", 0.0);
-  pangolin::Var<double> state_pxx4_1("state.pxx4_1", 0.0);
-  pangolin::Var<double> state_pxx4_2("state.pxx4_2", 0.0);
-  pangolin::Var<double> state_pxx4_3("state.pxx4_3", 0.0);
-  pangolin::Var<double> state_pxx4_4("state.pxx4_4", 0.0);
-  pangolin::Var<double> state_pxx4_5("state.pxx4_5", 0.0);
-  pangolin::Var<double> state_pxx4_6("state.pxx4_6", 0.0);
-  pangolin::Var<double> state_pxx4_7("state.pxx4_7", 0.0);
-  pangolin::Var<double> state_pxx4_8("state.pxx4_8", 0.0);
-  pangolin::Var<double> state_pxx4_9("state.pxx4_9", 0.0);
-  pangolin::Var<double> state_pxx4_10("state.pxx4_10", 0.0);
-  pangolin::Var<double> state_pxx4_11("state.pxx4_11", 0.0);
-  pangolin::Var<double> state_pxx4_12("state.pxx4_12", 0.0);
-
-  pangolin::Var<double> state_pxx5_0("state.pxx5_0", 0.0);
-  pangolin::Var<double> state_pxx5_1("state.pxx5_1", 0.0);
-  pangolin::Var<double> state_pxx5_2("state.pxx5_2", 0.0);
-  pangolin::Var<double> state_pxx5_3("state.pxx5_3", 0.0);
-  pangolin::Var<double> state_pxx5_4("state.pxx5_4", 0.0);
-  pangolin::Var<double> state_pxx5_5("state.pxx5_5", 0.0);
-  pangolin::Var<double> state_pxx5_6("state.pxx5_6", 0.0);
-  pangolin::Var<double> state_pxx5_7("state.pxx5_7", 0.0);
-  pangolin::Var<double> state_pxx5_8("state.pxx5_8", 0.0);
-  pangolin::Var<double> state_pxx5_9("state.pxx5_9", 0.0);
-  pangolin::Var<double> state_pxx5_10("state.pxx5_10", 0.0);
-  pangolin::Var<double> state_pxx5_11("state.pxx5_11", 0.0);
-  pangolin::Var<double> state_pxx5_12("state.pxx5_12", 0.0);
-
-  pangolin::Var<double> state_pxx6_0("state.pxx6_0", 0.0);
-  pangolin::Var<double> state_pxx6_1("state.pxx6_1", 0.0);
-  pangolin::Var<double> state_pxx6_2("state.pxx6_2", 0.0);
-  pangolin::Var<double> state_pxx6_3("state.pxx6_3", 0.0);
-  pangolin::Var<double> state_pxx6_4("state.pxx6_4", 0.0);
-  pangolin::Var<double> state_pxx6_5("state.pxx6_5", 0.0);
-  pangolin::Var<double> state_pxx6_6("state.pxx6_6", 0.0);
-  pangolin::Var<double> state_pxx6_7("state.pxx6_7", 0.0);
-  pangolin::Var<double> state_pxx6_8("state.pxx6_8", 0.0);
-  pangolin::Var<double> state_pxx6_9("state.pxx6_9", 0.0);
-  pangolin::Var<double> state_pxx6_10("state.pxx6_10", 0.0);
-  pangolin::Var<double> state_pxx6_11("state.pxx6_11", 0.0);
-  pangolin::Var<double> state_pxx6_12("state.pxx6_12", 0.0);
-
-  pangolin::Var<double> state_pxx7_0("state.pxx7_0", 0.0);
-  pangolin::Var<double> state_pxx7_1("state.pxx7_1", 0.0);
-  pangolin::Var<double> state_pxx7_2("state.pxx7_2", 0.0);
-  pangolin::Var<double> state_pxx7_3("state.pxx7_3", 0.0);
-  pangolin::Var<double> state_pxx7_4("state.pxx7_4", 0.0);
-  pangolin::Var<double> state_pxx7_5("state.pxx7_5", 0.0);
-  pangolin::Var<double> state_pxx7_6("state.pxx7_6", 0.0);
-  pangolin::Var<double> state_pxx7_7("state.pxx7_7", 0.0);
-  pangolin::Var<double> state_pxx7_8("state.pxx7_8", 0.0);
-  pangolin::Var<double> state_pxx7_9("state.pxx7_9", 0.0);
-  pangolin::Var<double> state_pxx7_10("state.pxx7_10", 0.0);
-  pangolin::Var<double> state_pxx7_11("state.pxx7_11", 0.0);
-  pangolin::Var<double> state_pxx7_12("state.pxx7_12", 0.0);
-
-  pangolin::Var<double> state_pxx8_0("state.pxx8_0", 0.0);
-  pangolin::Var<double> state_pxx8_1("state.pxx8_1", 0.0);
-  pangolin::Var<double> state_pxx8_2("state.pxx8_2", 0.0);
-  pangolin::Var<double> state_pxx8_3("state.pxx8_3", 0.0);
-  pangolin::Var<double> state_pxx8_4("state.pxx8_4", 0.0);
-  pangolin::Var<double> state_pxx8_5("state.pxx8_5", 0.0);
-  pangolin::Var<double> state_pxx8_6("state.pxx8_6", 0.0);
-  pangolin::Var<double> state_pxx8_7("state.pxx8_7", 0.0);
-  pangolin::Var<double> state_pxx8_8("state.pxx8_8", 0.0);
-  pangolin::Var<double> state_pxx8_9("state.pxx8_9", 0.0);
-  pangolin::Var<double> state_pxx8_10("state.pxx8_10", 0.0);
-  pangolin::Var<double> state_pxx8_11("state.pxx8_11", 0.0);
-  pangolin::Var<double> state_pxx8_12("state.pxx8_12", 0.0);
-
-  pangolin::Var<double> state_pxx9_0("state.pxx9_0", 0.0);
-  pangolin::Var<double> state_pxx9_1("state.pxx9_1", 0.0);
-  pangolin::Var<double> state_pxx9_2("state.pxx9_2", 0.0);
-  pangolin::Var<double> state_pxx9_3("state.pxx9_3", 0.0);
-  pangolin::Var<double> state_pxx9_4("state.pxx9_4", 0.0);
-  pangolin::Var<double> state_pxx9_5("state.pxx9_5", 0.0);
-  pangolin::Var<double> state_pxx9_6("state.pxx9_6", 0.0);
-  pangolin::Var<double> state_pxx9_7("state.pxx9_7", 0.0);
-  pangolin::Var<double> state_pxx9_8("state.pxx9_8", 0.0);
-  pangolin::Var<double> state_pxx9_9("state.pxx9_9", 0.0);
-  pangolin::Var<double> state_pxx9_10("state.pxx9_10", 0.0);
-  pangolin::Var<double> state_pxx9_11("state.pxx9_11", 0.0);
-  pangolin::Var<double> state_pxx9_12("state.pxx9_12", 0.0);
-
-  pangolin::Var<double> state_pxx10_0("state.pxx10_0", 0.0);
-  pangolin::Var<double> state_pxx10_1("state.pxx10_1", 0.0);
-  pangolin::Var<double> state_pxx10_2("state.pxx10_2", 0.0);
-  pangolin::Var<double> state_pxx10_3("state.pxx10_3", 0.0);
-  pangolin::Var<double> state_pxx10_4("state.pxx10_4", 0.0);
-  pangolin::Var<double> state_pxx10_5("state.pxx10_5", 0.0);
-  pangolin::Var<double> state_pxx10_6("state.pxx10_6", 0.0);
-  pangolin::Var<double> state_pxx10_7("state.pxx10_7", 0.0);
-  pangolin::Var<double> state_pxx10_8("state.pxx10_8", 0.0);
-  pangolin::Var<double> state_pxx10_9("state.pxx10_9", 0.0);
-  pangolin::Var<double> state_pxx10_10("state.pxx10_10", 0.0);
-  pangolin::Var<double> state_pxx10_11("state.pxx10_11", 0.0);
-  pangolin::Var<double> state_pxx10_12("state.pxx10_12", 0.0);
-
-  pangolin::Var<double> state_pxx11_0("state.pxx11_0", 0.0);
-  pangolin::Var<double> state_pxx11_1("state.pxx11_1", 0.0);
-  pangolin::Var<double> state_pxx11_2("state.pxx11_2", 0.0);
-  pangolin::Var<double> state_pxx11_3("state.pxx11_3", 0.0);
-  pangolin::Var<double> state_pxx11_4("state.pxx11_4", 0.0);
-  pangolin::Var<double> state_pxx11_5("state.pxx11_5", 0.0);
-  pangolin::Var<double> state_pxx11_6("state.pxx11_6", 0.0);
-  pangolin::Var<double> state_pxx11_7("state.pxx11_7", 0.0);
-  pangolin::Var<double> state_pxx11_8("state.pxx11_8", 0.0);
-  pangolin::Var<double> state_pxx11_9("state.pxx11_9", 0.0);
-  pangolin::Var<double> state_pxx11_10("state.pxx11_10", 0.0);
-  pangolin::Var<double> state_pxx11_11("state.pxx11_11", 0.0);
-  pangolin::Var<double> state_pxx11_12("state.pxx11_12", 0.0);
-
-  pangolin::Var<double> state_pxx12_0("state.pxx12_0", 0.0);
-  pangolin::Var<double> state_pxx12_1("state.pxx12_1", 0.0);
-  pangolin::Var<double> state_pxx12_2("state.pxx12_2", 0.0);
-  pangolin::Var<double> state_pxx12_3("state.pxx12_3", 0.0);
-  pangolin::Var<double> state_pxx12_4("state.pxx12_4", 0.0);
-  pangolin::Var<double> state_pxx12_5("state.pxx12_5", 0.0);
-  pangolin::Var<double> state_pxx12_6("state.pxx12_6", 0.0);
-  pangolin::Var<double> state_pxx12_7("state.pxx12_7", 0.0);
-  pangolin::Var<double> state_pxx12_8("state.pxx12_8", 0.0);
-  pangolin::Var<double> state_pxx12_9("state.pxx12_9", 0.0);
-  pangolin::Var<double> state_pxx12_10("state.pxx12_10", 0.0);
-  pangolin::Var<double> state_pxx12_11("state.pxx12_11", 0.0);
-  pangolin::Var<double> state_pxx12_12("state.pxx12_12", 0.0);
-
-  pangolin::Var<string> f1_identifier("f1.identifier", "empty");
-  pangolin::Var<double> f1_yi_x("f1.yi_x", 0.0);
-  pangolin::Var<double> f1_yi_y("f1.yi_y", 0.0);
-  pangolin::Var<double> f1_yi_z("f1.yi_z", 0.0);
-  pangolin::Var<double> f1_xp_org_0("f1.xp_org_0", 0.0);
-  pangolin::Var<double> f1_xp_org_1("f1.xp_org_1", 0.0);
-  pangolin::Var<double> f1_xp_org_2("f1.xp_org_2", 0.0);
-  pangolin::Var<double> f1_xp_org_3("f1.xp_org_3", 0.0);
-  pangolin::Var<double> f1_xp_org_4("f1.xp_org_4", 0.0);
-  pangolin::Var<double> f1_xp_org_5("f1.xp_org_5", 0.0);
-  pangolin::Var<double> f1_xp_org_6("f1.xp_org_6", 0.0);
-
-  pangolin::Var<string> f2_identifier("f2.identifier", "empty");
-  pangolin::Var<double> f2_yi_x("f2.yi_x", 0.0);
-  pangolin::Var<double> f2_yi_y("f2.yi_y", 0.0);
-  pangolin::Var<double> f2_yi_z("f2.yi_z", 0.0);
-  pangolin::Var<double> f2_xp_org_0("f2.xp_org_0", 0.0);
-  pangolin::Var<double> f2_xp_org_1("f2.xp_org_1", 0.0);
-  pangolin::Var<double> f2_xp_org_2("f2.xp_org_2", 0.0);
-  pangolin::Var<double> f2_xp_org_3("f2.xp_org_3", 0.0);
-  pangolin::Var<double> f2_xp_org_4("f2.xp_org_4", 0.0);
-  pangolin::Var<double> f2_xp_org_5("f2.xp_org_5", 0.0);
-  pangolin::Var<double> f2_xp_org_6("f2.xp_org_6", 0.0);
-
-  pangolin::Var<string> f3_identifier("f3.identifier", "empty");
-  pangolin::Var<double> f3_yi_x("f3.yi_x", 0.0);
-  pangolin::Var<double> f3_yi_y("f3.yi_y", 0.0);
-  pangolin::Var<double> f3_yi_z("f3.yi_z", 0.0);
-  pangolin::Var<double> f3_xp_org_0("f3.xp_org_0", 0.0);
-  pangolin::Var<double> f3_xp_org_1("f3.xp_org_1", 0.0);
-  pangolin::Var<double> f3_xp_org_2("f3.xp_org_2", 0.0);
-  pangolin::Var<double> f3_xp_org_3("f3.xp_org_3", 0.0);
-  pangolin::Var<double> f3_xp_org_4("f3.xp_org_4", 0.0);
-  pangolin::Var<double> f3_xp_org_5("f3.xp_org_5", 0.0);
-  pangolin::Var<double> f3_xp_org_6("f3.xp_org_6", 0.0);
-
-  pangolin::Var<string> f4_identifier("f4.identifier", "empty");
-  pangolin::Var<double> f4_yi_x("f4.yi_x", 0.0);
-  pangolin::Var<double> f4_yi_y("f4.yi_y", 0.0);
-  pangolin::Var<double> f4_yi_z("f4.yi_z", 0.0);
-  pangolin::Var<double> f4_xp_org_0("f4.xp_org_0", 0.0);
-  pangolin::Var<double> f4_xp_org_1("f4.xp_org_1", 0.0);
-  pangolin::Var<double> f4_xp_org_2("f4.xp_org_2", 0.0);
-  pangolin::Var<double> f4_xp_org_3("f4.xp_org_3", 0.0);
-  pangolin::Var<double> f4_xp_org_4("f4.xp_org_4", 0.0);
-  pangolin::Var<double> f4_xp_org_5("f4.xp_org_5", 0.0);
-  pangolin::Var<double> f4_xp_org_6("f4.xp_org_6", 0.0);
 
   // Keep this order!
   //  1. Camera
@@ -1885,7 +1671,7 @@ void MonoSLAM::Init(const string &config_path)
   kErasePartiallyInitFeatureAfterThisManyAttempts_ = erase_partially_init_feature_after_this_many_attempts;
 
   number_of_visible_features_ = 0;
-  minimum_attempted_measurements_of_feature_ = 10;
+  minimum_attempted_measurements_of_feature_ = 20;
   successful_match_fraction_ = 0.5;
   next_free_label_ = 0;
   marked_feature_label_ = -1;
@@ -1898,82 +1684,13 @@ void MonoSLAM::Init(const string &config_path)
          state_ww_x, state_ww_y, state_ww_z;
 
   Pxx_.resize(motion_model_->kStateSize_, motion_model_->kStateSize_);
-  Pxx_ << state_pxx0_0,state_pxx0_1,state_pxx0_2,state_pxx0_3,
-          state_pxx0_4,state_pxx0_5,state_pxx0_6,state_pxx0_7,
-          state_pxx0_8,state_pxx0_9,state_pxx0_10,state_pxx0_11,state_pxx0_12,
-
-          state_pxx1_0,state_pxx1_1,state_pxx1_2,state_pxx1_3,
-          state_pxx1_4,state_pxx1_5,state_pxx1_6,state_pxx1_7,
-          state_pxx1_8,state_pxx1_9,state_pxx1_10,state_pxx1_11,state_pxx1_12,
-
-          state_pxx2_0,state_pxx2_1,state_pxx2_2,state_pxx2_3,
-          state_pxx2_4,state_pxx2_5,state_pxx2_6,state_pxx2_7,
-          state_pxx2_8,state_pxx2_9,state_pxx2_10,state_pxx2_11,state_pxx2_12,
-
-          state_pxx3_0,state_pxx3_1,state_pxx3_2,state_pxx3_3,
-          state_pxx3_4,state_pxx3_5,state_pxx3_6,state_pxx3_7,
-          state_pxx3_8,state_pxx3_9,state_pxx3_10,state_pxx3_11,state_pxx3_12,
-
-          state_pxx4_0,state_pxx4_1,state_pxx4_2,state_pxx4_3,
-          state_pxx4_4,state_pxx4_5,state_pxx4_6,state_pxx4_7,
-          state_pxx4_8,state_pxx4_9,state_pxx4_10,state_pxx4_11,state_pxx4_12,
-
-          state_pxx5_0,state_pxx5_1,state_pxx5_2,state_pxx5_3,
-          state_pxx5_4,state_pxx5_5,state_pxx5_6,state_pxx5_7,
-          state_pxx5_8,state_pxx5_9,state_pxx5_10,state_pxx5_11,state_pxx5_12,
-
-          state_pxx6_0,state_pxx6_1,state_pxx6_2,state_pxx6_3,
-          state_pxx6_4,state_pxx6_5,state_pxx6_6,state_pxx6_7,
-          state_pxx6_8,state_pxx6_9,state_pxx6_10,state_pxx6_11,state_pxx6_12,
-
-          state_pxx7_0,state_pxx7_1,state_pxx7_2,state_pxx7_3,
-          state_pxx7_4,state_pxx7_5,state_pxx7_6,state_pxx7_7,
-          state_pxx7_8,state_pxx7_9,state_pxx7_10,state_pxx7_11,state_pxx7_12,
-
-          state_pxx8_0,state_pxx8_1,state_pxx8_2,state_pxx8_3,
-          state_pxx8_4,state_pxx8_5,state_pxx8_6,state_pxx8_7,
-          state_pxx8_8,state_pxx8_9,state_pxx8_10,state_pxx8_11,state_pxx8_12,
-
-          state_pxx9_0,state_pxx9_1,state_pxx9_2,state_pxx9_3,
-          state_pxx9_4,state_pxx9_5,state_pxx9_6,state_pxx9_7,
-          state_pxx9_8,state_pxx9_9,state_pxx9_10,state_pxx9_11,state_pxx9_12,
-
-          state_pxx10_0,state_pxx10_1,state_pxx10_2,state_pxx10_3,
-          state_pxx10_4,state_pxx10_5,state_pxx10_6,state_pxx10_7,
-          state_pxx10_8,state_pxx10_9,state_pxx10_10,state_pxx10_11,state_pxx10_12,
-
-          state_pxx11_0,state_pxx11_1,state_pxx11_2,state_pxx11_3,
-          state_pxx11_4,state_pxx11_5,state_pxx11_6,state_pxx11_7,
-          state_pxx11_8,state_pxx11_9,state_pxx11_10,state_pxx11_11,state_pxx11_12,
-
-          state_pxx12_0,state_pxx12_1,state_pxx12_2,state_pxx12_3,
-          state_pxx12_4,state_pxx12_5,state_pxx12_6,state_pxx12_7,
-          state_pxx12_8,state_pxx12_9,state_pxx12_10,state_pxx12_11,state_pxx12_12;
 
   // Add initial features
   Eigen::VectorXd y_temp(3), xp_temp(7);
 
-  y_temp << f1_yi_x,f1_yi_y,f1_yi_z;
-  xp_temp << f1_xp_org_0,f1_xp_org_1,f1_xp_org_2,f1_xp_org_3,f1_xp_org_4,f1_xp_org_5,f1_xp_org_6;
-  AddNewKnownFeature(y_temp, xp_temp, f1_identifier);
-
-  y_temp << f2_yi_x,f2_yi_y,f2_yi_z;
-  xp_temp << f2_xp_org_0,f2_xp_org_1,f2_xp_org_2,f2_xp_org_3,f2_xp_org_4,f2_xp_org_5,f2_xp_org_6;
-  AddNewKnownFeature(y_temp, xp_temp, f2_identifier);
-
-  y_temp << f3_yi_x,f3_yi_y,f3_yi_z;
-  xp_temp << f3_xp_org_0,f3_xp_org_1,f3_xp_org_2,f3_xp_org_3,f3_xp_org_4,f3_xp_org_5,f3_xp_org_6;
-  AddNewKnownFeature(y_temp, xp_temp, f3_identifier);
-
-  y_temp << f4_yi_x,f4_yi_y,f4_yi_z;
-  xp_temp << f4_xp_org_0,f4_xp_org_1,f4_xp_org_2,f4_xp_org_3,f4_xp_org_4,f4_xp_org_5,f4_xp_org_6;
-  AddNewKnownFeature(y_temp, xp_temp, f4_identifier);
 
   // Good for the last step, ready for capturing, drawing and processing
   kalman_ = new Kalman();
-  graphic_tool_ = new GraphicTool(this);
-  frame_grabber_ = new FrameGrabber();
-  frame_grabber_->Init(input_name, input_mode);
 
   init_feature_search_region_defined_flag_ = false;
   location_selected_flag_ = false;

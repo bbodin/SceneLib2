@@ -37,27 +37,31 @@
 #define PANGOLIN_UTIL_H
 
 #include "monoslam.h"
+#include "graphic/graphictool.h"
+#include <pangolin/pangolin.h>
 
 namespace SceneLib2 {
 
 struct Handler3D : pangolin::Handler3D {
-  Handler3D(pangolin::OpenGlRenderState& view_state, MonoSLAM *monoslam,
+  Handler3D(pangolin::OpenGlRenderState& view_state, MonoSLAM *monoslam,  GraphicTool *graphic_tool,
             pangolin::AxisDirection enforce_up=pangolin::AxisNone,
             float trans_scale=0.01f) :
-    pangolin::Handler3D(view_state, enforce_up, trans_scale) {  monoslam_ptr_ = monoslam; view_state_ = &view_state;  }
+    pangolin::Handler3D(view_state, enforce_up, trans_scale) {  monoslam_ptr_ = monoslam; graphic_tool_ptr = graphic_tool ;  view_state_ = &view_state;  }
 
   void Mouse(pangolin::View&, pangolin::MouseButton button, int x, int y, bool pressed, int button_state);
 
   MonoSLAM  *monoslam_ptr_;
+  GraphicTool  *graphic_tool_ptr;
   pangolin::OpenGlRenderState *view_state_;
 };
 
 struct Handler2D : pangolin::Handler {
-  Handler2D(MonoSLAM *monoslam) { monoslam_ptr_ = monoslam; }
+  Handler2D(MonoSLAM *monoslam,  GraphicTool *graphic_tool) { monoslam_ptr_ = monoslam; graphic_tool_ptr = graphic_tool ;  }
 
   void Mouse(pangolin::View&, pangolin::MouseButton button, int x, int y, bool pressed, int button_state);
 
   MonoSLAM  *monoslam_ptr_;
+  GraphicTool  *graphic_tool_ptr;
 };
 
 } // namespace SceneLib2

@@ -34,6 +34,7 @@
  */
 
 #include "improc.h"
+#include <cmath>
 
 namespace SceneLib2 {
 

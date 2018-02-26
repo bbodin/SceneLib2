@@ -45,7 +45,7 @@ void Handler3D::Mouse(pangolin::View& display, pangolin::MouseButton button, int
     int picked;
 
     display.ActivateScissorAndClear(*view_state_);
-    picked = monoslam_ptr_->graphic_tool_->Picker(x, y, true);
+    picked = graphic_tool_ptr->Picker(x, y, true);
 
     if (picked != 0) {
       monoslam_ptr_->toggle_feature_lab(picked-1);
@@ -66,7 +66,7 @@ void Handler2D::Mouse(pangolin::View& display, pangolin::MouseButton button, int
     int local_y = (int)((double)((display.v.b + display.v.h) - y) * scale_h);
 
     display.ActivateScissorAndClear();
-    picked = monoslam_ptr_->graphic_tool_->Picker(x, y, false);
+    picked = graphic_tool_ptr->Picker(x, y, false);
 
     if (picked != 0) {
       monoslam_ptr_->toggle_feature_lab(picked-1);

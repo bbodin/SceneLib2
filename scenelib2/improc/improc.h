@@ -36,7 +36,7 @@
 #ifndef IMPROC_H
 #define IMPROC_H
 
-#include <opencv2/opencv.hpp>
+ #include "cv_mat.h"
 
 namespace SceneLib2 {
 
