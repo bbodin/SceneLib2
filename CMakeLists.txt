@@ -63,10 +63,9 @@ SET(SOURCES ./scenelib2/monoslam.h
             
 	  # ----------------- SEQUENTIAL VERSION -----------------
 	  
-add_library(${appname}-sequential  ${SOURCES}  monoslam_library.cpp)
-target_link_libraries(${appname}-sequential   ${common_libraries})	
-SET_TARGET_PROPERTIES(${appname}-sequential PROPERTIES COMPILE_FLAGS "")
-SET_TARGET_PROPERTIES(${appname}-sequential PROPERTIES COMPILE_FLAGS "-fPIC")
-install(TARGETS ${appname}-sequential  DESTINATION  lib/)
+add_library(${appname}-cpp  ${SOURCES}  monoslam_library.cpp)
+target_link_libraries(${appname}-cpp   ${common_libraries})	
+SET_TARGET_PROPERTIES(${appname}-cpp PROPERTIES COMPILE_FLAGS "-fPIC")
+install(TARGETS ${appname}-cpp  DESTINATION  lib/)
 
-generate_slam_library(${appname}-sequential "")
+generate_slam_library(${appname}-cpp "")
